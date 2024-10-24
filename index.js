@@ -1,13 +1,12 @@
-// index.js
 const { Client } = require('@notionhq/client');
 const axios = require('axios');
 
 // Configuración de las variables de entorno
-const CLOCKIFY_API_KEY = 'ODc5MjJjYzUtOTJlYi00ODVmLWEzOWItYTc4Y2U0ZjNlZDI0';
-const NOTION_TOKEN = 'ntn_p855786970129OnZLrNB1KRbfTTuAW9t8zJqog6rgoj6sj';
-const SOLEST_PAGE_ID = '1271fe16ba8580dcb0f6e3de84224ac3';
-const CLOCKIFY_PROJECT_ID = '67135e708a4e0e6c161a9fe7';
-const WORKSPACE_ID = '647e9d848faddf3d230a5332';
+const CLOCKIFY_API_KEY = process.env.CLOCKIFY_API_KEY;
+const NOTION_TOKEN = process.env.NOTION_TOKEN;
+const SOLEST_PAGE_ID = process.env.SOLEST_PAGE_ID;
+const CLOCKIFY_PROJECT_ID = process.env.CLOCKIFY_PROJECT_ID;
+const WORKSPACE_ID = process.env.WORKSPACE_ID;
 
 // Inicializar cliente de Notion
 const notion = new Client({
@@ -18,7 +17,7 @@ const notion = new Client({
 async function getClockifyHours() {
   try {
     const response = await axios.get(
-      `https://api.clockify.me/api/v1/workspaces/${WORKSPACE_ID}/projects/${CLOCKIFY_PROJECT_ID}/duration`,
+      `https://api.clockify.me/api/v1/workspaces/${WORKSPACE_ID}/projects/${CLOCKIFY_PROJECT_ID}`,
       {
         headers: {
           'X-Api-Key': CLOCKIFY_API_KEY
@@ -26,8 +25,10 @@ async function getClockifyHours() {
       }
     );
     
-    // Convertir la duración de segundos a horas
-    const durationInHours = Math.round(response.data.duration / 3600);
+    // Obtener la duración del proyecto
+    const duration = response.data.duration || 0;
+    // Convertir la duración a horas (asumiendo que viene en segundos)
+    const durationInHours = Math.round(duration / 3600);
     return durationInHours;
   } catch (error) {
     console.error('Error al obtener horas de Clockify:', error);
@@ -47,25 +48,35 @@ async function updateNotion(hours) {
       }
     });
     console.log('Notion actualizado exitosamente');
+    return true;
   } catch (error) {
     console.error('Error al actualizar Notion:', error);
     throw error;
   }
 }
 
-// Función principal que se ejecutará periódicamente
-async function updateHours() {
-  try {
-    const hours = await getClockifyHours();
-    await updateNotion(hours);
-    return { status: 'success', message: 'Horas actualizadas correctamente' };
-  } catch (error) {
-    return { status: 'error', message: error.message };
-  }
-}
-
-// Exportar la función para uso en API routes de Vercel
+// Handler para la API de Vercel
 module.exports = async (req, res) => {
-  const result = await updateHours();
-  res.status(result.status === 'success' ? 200 : 500).json(result);
+  // Verificar que la ruta sea /api/update
+  if (req.url === '/api/update') {
+    try {
+      console.log('Iniciando actualización...');
+      const hours = await getClockifyHours();
+      console.log('Horas obtenidas:', hours);
+      await updateNotion(hours);
+      res.status(200).json({ status: 'success', message: 'Horas actualizadas correctamente', hours });
+    } catch (error) {
+      console.error('Error en la actualización:', error);
+      res.status(500).json({ 
+        status: 'error', 
+        message: error.message || 'Error interno del servidor'
+      });
+    }
+  } else {
+    // Página de inicio simple
+    res.status(200).json({ 
+      status: 'success', 
+      message: 'API funcionando. Usa /api/update para actualizar las horas.' 
+    });
+  }
 };
