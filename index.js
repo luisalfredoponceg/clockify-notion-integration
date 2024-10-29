@@ -13,21 +13,28 @@ const notion = new Client({
   auth: NOTION_TOKEN
 });
 
-// Función para obtener las horas de Clockify usando la API de reportes
+// Función para obtener las horas de Clockify
 async function getClockifyHours() {
   try {
-    console.log('Intentando conectar con Clockify para obtener horas...');
+    console.log('Intentando conectar con Clockify...');
     
+    // Obtener la fecha actual y la fecha de hace un mes
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+
+    const requestBody = {
+      dateRangeStart: startDate.toISOString(),
+      dateRangeEnd: endDate.toISOString(),
+      summaryFilter: {
+        groups: ["PROJECT"]
+      }
+    };
+
+    // Usar el endpoint correcto para reportes detallados
     const response = await axios.post(
-      `https://api.clockify.me/api/v1/workspaces/${WORKSPACE_ID}/reports/summary`,
-      {
-        "dateRangeStart": "2024-01-01T00:00:00.000Z", // Rango de fechas para el reporte
-        "dateRangeEnd": new Date().toISOString(),      // Fecha actual como fin del rango
-        "projects": [CLOCKIFY_PROJECT_ID],
-        "summaryFilter": {
-          "groups": ["PROJECT"]
-        }
-      },
+      `https://reports.api.clockify.me/v1/workspaces/${WORKSPACE_ID}/reports/summary`,
+      requestBody,
       {
         headers: {
           'X-Api-Key': CLOCKIFY_API_KEY,
@@ -35,15 +42,23 @@ async function getClockifyHours() {
         }
       }
     );
+    
+    console.log('Respuesta de Clockify:', response.data);
 
-    // Asumimos que el primer resultado contiene las horas totales del proyecto
-    const projectSummary = response.data.totals[0];
-    const hours = projectSummary?.totalTime || 0; // En formato de milisegundos
+    // Buscar el proyecto específico y extraer las horas
+    const projectData = response.data.groupOne.find(
+      group => group.id === CLOCKIFY_PROJECT_ID
+    );
 
-    // Convertir milisegundos a horas
-    const hoursInHours = hours / 1000 / 60 / 60;
-    console.log('Horas obtenidas de Clockify:', hoursInHours);
-    return hoursInHours;
+    if (!projectData) {
+      console.log('No se encontraron datos para el proyecto especificado');
+      return 0;
+    }
+
+    // Convertir la duración de milisegundos a horas
+    const hours = projectData.duration / (1000 * 60 * 60);
+    return Number(hours.toFixed(2));
+
   } catch (error) {
     console.error('Error detallado de Clockify:', {
       message: error.message,
@@ -59,24 +74,45 @@ async function getClockifyHours() {
 async function updateNotion(hours) {
   try {
     console.log('Intentando actualizar Notion...');
+    
+    // Primero, verificamos si la página existe y obtenemos su información
+    const page = await notion.pages.retrieve({ page_id: SOLEST_PAGE_ID });
+    console.log('Página de Notion encontrada:', page);
+
+    // Actualizamos la página con las nuevas horas
     await notion.pages.update({
       page_id: SOLEST_PAGE_ID,
       properties: {
         'Horas SOLEST': {
+          type: 'number',
           number: hours
         }
       }
     });
+    
     console.log('Notion actualizado exitosamente');
     return true;
   } catch (error) {
-    console.error('Error detallado de Notion:', error);
+    console.error('Error detallado de Notion:', {
+      message: error.message,
+      code: error.code,
+      body: error.body
+    });
     throw new Error(`Error de Notion: ${error.message}`);
   }
 }
 
 // Handler para la API de Vercel
 module.exports = async (req, res) => {
+  // Permitir CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.url === '/api/update') {
     try {
       console.log('Iniciando proceso de actualización...');
