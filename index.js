@@ -13,14 +13,21 @@ const notion = new Client({
   auth: NOTION_TOKEN
 });
 
-// Función para obtener las horas de Clockify
+// Función para obtener las horas de Clockify usando la API de reportes
 async function getClockifyHours() {
   try {
-    console.log('Intentando conectar con Clockify...');
-    console.log(`URL: https://api.clockify.me/api/v1/workspaces/${WORKSPACE_ID}/projects/${CLOCKIFY_PROJECT_ID}`);
+    console.log('Intentando conectar con Clockify para obtener horas...');
     
-    const response = await axios.get(
-      `https://api.clockify.me/api/v1/workspaces/${WORKSPACE_ID}/projects/${CLOCKIFY_PROJECT_ID}/reports`,
+    const response = await axios.post(
+      `https://api.clockify.me/api/v1/workspaces/${WORKSPACE_ID}/reports/summary`,
+      {
+        "dateRangeStart": "2024-01-01T00:00:00.000Z", // Rango de fechas para el reporte
+        "dateRangeEnd": new Date().toISOString(),      // Fecha actual como fin del rango
+        "projects": [CLOCKIFY_PROJECT_ID],
+        "summaryFilter": {
+          "groups": ["PROJECT"]
+        }
+      },
       {
         headers: {
           'X-Api-Key': CLOCKIFY_API_KEY,
@@ -28,9 +35,15 @@ async function getClockifyHours() {
         }
       }
     );
-    
-    console.log('Respuesta de Clockify:', response.data);
-    return response.data.duration || 0;
+
+    // Asumimos que el primer resultado contiene las horas totales del proyecto
+    const projectSummary = response.data.totals[0];
+    const hours = projectSummary?.totalTime || 0; // En formato de milisegundos
+
+    // Convertir milisegundos a horas
+    const hoursInHours = hours / 1000 / 60 / 60;
+    console.log('Horas obtenidas de Clockify:', hoursInHours);
+    return hoursInHours;
   } catch (error) {
     console.error('Error detallado de Clockify:', {
       message: error.message,
