@@ -4,8 +4,8 @@
   "description": "Integration between Clockify and Notion",
   "main": "index.js",
   "dependencies": {
-    "@notionhq/client": "^1.0.0",
-    "axios": "^0.26.0"
+    "@notionhq/client": "^2.2.0",
+    "axios": "^1.6.0"
   },
   "scripts": {
     "start": "node index.js"
