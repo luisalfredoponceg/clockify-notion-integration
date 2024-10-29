@@ -75,4 +75,71 @@ async function getClockifyHours() {
 }
 
 // Función para actualizar Notion
-async function
+async function updateNotion(hours) {
+    try {
+        console.log('Intentando actualizar Notion...');
+        console.log('Page ID:', SOLEST_PAGE_ID);
+        console.log('Horas a actualizar:', hours);
+
+        const page = await notion.pages.retrieve({ page_id: SOLEST_PAGE_ID });
+        console.log('Página de Notion encontrada:', JSON.stringify(page, null, 2));
+
+        const updateResponse = await notion.pages.update({
+            page_id: SOLEST_PAGE_ID,
+            properties: {
+                'Horas SOLEST': {
+                    type: 'number',
+                    number: hours
+                }
+            }
+        });
+
+        console.log('Respuesta de actualización de Notion:', JSON.stringify(updateResponse, null, 2));
+        return true;
+    } catch (error) {
+        console.error('Error detallado de Notion:', {
+            message: error.message,
+            code: error.code,
+            body: error.body
+        });
+        throw new Error(`Error de Notion: ${error.message}`);
+    }
+}
+
+// Handler para la API de Vercel
+module.exports = async (req, res) => {
+    try {
+        // Permitir CORS
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+            return res.status(200).end();
+        }
+
+        if (req.url === '/api/update') {
+            console.log('Iniciando proceso de actualización...');
+            const hours = await getClockifyHours();
+            await updateNotion(hours);
+
+            res.status(200).json({
+                status: 'success',
+                message: 'Horas actualizadas correctamente',
+                hours
+            });
+        } else {
+            res.status(200).json({
+                status: 'success',
+                message: 'API funcionando. Usa /api/update para actualizar las horas.'
+            });
+        }
+    } catch (error) {
+        console.error('Error en el proceso:', error);
+        res.status(500).json({
+            status: 'error',
+            message: error.message,
+            details: error.response?.data || 'No hay detalles adicionales'
+        });
+    }
+};
