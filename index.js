@@ -21,15 +21,20 @@ async function getClockifyHours() {
     // Obtener la fecha actual y la fecha de hace un mes
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 1);
+    startDate.setMonth(startDate.getMonth() - 12); // Aumentamos a 12 meses para ver más datos
 
     const requestBody = {
       dateRangeStart: startDate.toISOString(),
       dateRangeEnd: endDate.toISOString(),
       summaryFilter: {
         groups: ["PROJECT"]
+      },
+      projects: {
+        ids: [CLOCKIFY_PROJECT_ID]
       }
     };
+
+    console.log('Request Body:', JSON.stringify(requestBody, null, 2));
 
     // Usar el endpoint correcto para reportes detallados
     const response = await axios.post(
@@ -43,20 +48,25 @@ async function getClockifyHours() {
       }
     );
     
-    console.log('Respuesta de Clockify:', response.data);
+    console.log('Respuesta completa de Clockify:', JSON.stringify(response.data, null, 2));
 
-    // Buscar el proyecto específico y extraer las horas
-    const projectData = response.data.groupOne.find(
-      group => group.id === CLOCKIFY_PROJECT_ID
-    );
-
-    if (!projectData) {
-      console.log('No se encontraron datos para el proyecto especificado');
-      return 0;
+    // Si los datos vienen en una estructura diferente, intentamos encontrarlos
+    let hours = 0;
+    
+    if (response.data.totals && response.data.totals[0]) {
+      console.log('Totals encontrado:', response.data.totals[0]);
+      hours = response.data.totals[0].totalTime / (1000 * 60 * 60);
+    } else if (response.data.groupOne) {
+      console.log('GroupOne encontrado:', response.data.groupOne);
+      const projectData = response.data.groupOne.find(
+        group => group.id === CLOCKIFY_PROJECT_ID
+      );
+      if (projectData) {
+        hours = projectData.duration / (1000 * 60 * 60);
+      }
     }
 
-    // Convertir la duración de milisegundos a horas
-    const hours = projectData.duration / (1000 * 60 * 60);
+    console.log('Horas calculadas:', hours);
     return Number(hours.toFixed(2));
 
   } catch (error) {
@@ -74,13 +84,15 @@ async function getClockifyHours() {
 async function updateNotion(hours) {
   try {
     console.log('Intentando actualizar Notion...');
+    console.log('Page ID:', SOLEST_PAGE_ID);
+    console.log('Horas a actualizar:', hours);
     
     // Primero, verificamos si la página existe y obtenemos su información
     const page = await notion.pages.retrieve({ page_id: SOLEST_PAGE_ID });
-    console.log('Página de Notion encontrada:', page);
+    console.log('Página de Notion encontrada:', JSON.stringify(page, null, 2));
 
     // Actualizamos la página con las nuevas horas
-    await notion.pages.update({
+    const updateResponse = await notion.pages.update({
       page_id: SOLEST_PAGE_ID,
       properties: {
         'Horas SOLEST': {
@@ -90,7 +102,7 @@ async function updateNotion(hours) {
       }
     });
     
-    console.log('Notion actualizado exitosamente');
+    console.log('Respuesta de actualización de Notion:', JSON.stringify(updateResponse, null, 2));
     return true;
   } catch (error) {
     console.error('Error detallado de Notion:', {
