@@ -11,6 +11,37 @@ const WORKSPACE_ID = process.env.WORKSPACE_ID;
 // Inicializar cliente de Notion
 const notion = new Client({ auth: NOTION_TOKEN });
 
+// Función auxiliar para convertir duración a milisegundos
+function parseDuration(duration) {
+    console.log('Procesando duración:', duration);
+    
+    if (typeof duration !== 'string') {
+        console.log('La duración no es un string:', typeof duration, duration);
+        return 0;
+    }
+
+    // Si la duración viene en formato de milisegundos directo
+    if (!isNaN(duration)) {
+        return parseInt(duration);
+    }
+
+    try {
+        // Asumiendo que la duración viene en formato ISO 8601
+        const hours = duration.match(/(\d+)H/)?.[1] || 0;
+        const minutes = duration.match(/(\d+)M/)?.[1] || 0;
+        const seconds = duration.match(/(\d+)S/)?.[1] || 0;
+
+        console.log('Duración desglosada:', { hours, minutes, seconds });
+        
+        return (parseInt(hours) * 3600000) + 
+               (parseInt(minutes) * 60000) + 
+               (parseInt(seconds) * 1000);
+    } catch (error) {
+        console.error('Error al procesar la duración:', error);
+        return 0;
+    }
+}
+
 // Función para obtener las horas de Clockify
 async function getClockifyHours() {
     try {
@@ -20,13 +51,12 @@ async function getClockifyHours() {
         const startDate = new Date();
         startDate.setMonth(startDate.getMonth() - 12);
 
-        // Modificamos el request para usar el endpoint de reportes detallados
         const requestBody = {
             dateRangeStart: startDate.toISOString(),
             dateRangeEnd: endDate.toISOString(),
             detailedFilter: {
                 page: 1,
-                pageSize: 1000, // Aumentamos el tamaño de página para asegurar obtener todos los registros
+                pageSize: 1000,
                 sortColumn: "DATE"
             },
             projects: {
@@ -37,7 +67,6 @@ async function getClockifyHours() {
 
         console.log('Request Body:', JSON.stringify(requestBody, null, 2));
 
-        // Usamos el endpoint de reportes detallados en lugar del summary
         const response = await axios.post(
             `https://reports.api.clockify.me/v1/workspaces/${WORKSPACE_ID}/reports/detailed`,
             requestBody,
@@ -49,27 +78,42 @@ async function getClockifyHours() {
             }
         );
 
-        console.log('Respuesta de Clockify recibida');
+        console.log('Estructura de la respuesta:', Object.keys(response.data));
+        console.log('Número total de entradas:', response.data.timeentries?.length || 0);
+
+        // Mostrar las primeras entradas para debug
+        if (response.data.timeentries && response.data.timeentries.length > 0) {
+            console.log('Ejemplo de primera entrada:', JSON.stringify(response.data.timeentries[0], null, 2));
+        }
 
         let totalMilliseconds = 0;
 
-        // Sumamos la duración de todas las entradas de tiempo
         if (response.data.timeentries && response.data.timeentries.length > 0) {
-            totalMilliseconds = response.data.timeentries.reduce((total, entry) => {
-                // Convertimos la duración de cada entrada (que viene en PTxHxMxS format) a millisegundos
-                const duration = entry.timeInterval.duration;
-                const hours = duration.match(/(\d+)H/)?.[1] || 0;
-                const minutes = duration.match(/(\d+)M/)?.[1] || 0;
-                const seconds = duration.match(/(\d+)S/)?.[1] || 0;
-                
-                return total + (hours * 3600000 + minutes * 60000 + seconds * 1000);
-            }, 0);
+            response.data.timeentries.forEach((entry, index) => {
+                console.log(`Procesando entrada ${index + 1}:`, {
+                    description: entry.description,
+                    timeInterval: entry.timeInterval
+                });
+
+                let entryDuration;
+                if (entry.timeInterval && entry.timeInterval.duration) {
+                    entryDuration = parseDuration(entry.timeInterval.duration);
+                } else if (entry.timeInterval) {
+                    // Calcular duración basada en start y end si están disponibles
+                    const start = new Date(entry.timeInterval.start);
+                    const end = new Date(entry.timeInterval.end);
+                    entryDuration = end - start;
+                }
+
+                console.log(`Duración calculada para entrada ${index + 1}:`, entryDuration);
+                totalMilliseconds += entryDuration;
+            });
         }
 
-        // Convertimos millisegundos a horas y redondeamos a 2 decimales
         const hours = Number((totalMilliseconds / (1000 * 60 * 60)).toFixed(2));
-        
+        console.log('Total millisegundos:', totalMilliseconds);
         console.log('Total horas calculadas:', hours);
+        
         return hours;
     } catch (error) {
         console.error('Error detallado de Clockify:', {
@@ -82,7 +126,7 @@ async function getClockifyHours() {
     }
 }
 
-// Función para actualizar Notion (sin cambios)
+// Función para actualizar Notion
 async function updateNotion(hours) {
     try {
         console.log('Intentando actualizar Notion...');
@@ -111,10 +155,9 @@ async function updateNotion(hours) {
     }
 }
 
-// Handler para la API de Vercel (sin cambios)
+// Handler para la API de Vercel
 module.exports = async (req, res) => {
     try {
-        // Permitir CORS
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
