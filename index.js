@@ -20,21 +20,26 @@ async function getClockifyHours() {
         const startDate = new Date();
         startDate.setMonth(startDate.getMonth() - 12);
 
+        // Modificamos el request para usar el endpoint de reportes detallados
         const requestBody = {
             dateRangeStart: startDate.toISOString(),
             dateRangeEnd: endDate.toISOString(),
-            summaryFilter: {
-                groups: ["PROJECT"]
+            detailedFilter: {
+                page: 1,
+                pageSize: 1000, // Aumentamos el tamaño de página para asegurar obtener todos los registros
+                sortColumn: "DATE"
             },
             projects: {
-                ids: [CLOCKIFY_PROJECT_ID]
+                ids: [CLOCKIFY_PROJECT_ID],
+                contains: "CONTAINS"
             }
         };
 
         console.log('Request Body:', JSON.stringify(requestBody, null, 2));
 
+        // Usamos el endpoint de reportes detallados en lugar del summary
         const response = await axios.post(
-            `https://reports.api.clockify.me/v1/workspaces/${WORKSPACE_ID}/reports/summary`,
+            `https://reports.api.clockify.me/v1/workspaces/${WORKSPACE_ID}/reports/detailed`,
             requestBody,
             {
                 headers: {
@@ -44,25 +49,28 @@ async function getClockifyHours() {
             }
         );
 
-        console.log('Respuesta completa de Clockify:', JSON.stringify(response.data, null, 2));
+        console.log('Respuesta de Clockify recibida');
 
-        let hours = 0;
+        let totalMilliseconds = 0;
 
-        if (response.data.totals && response.data.totals[0]) {
-            console.log('Totals encontrado:', response.data.totals[0]);
-            hours = response.data.totals[0].totalTime / (1000 * 60 * 60);
-        } else if (response.data.groupOne) {
-            console.log('GroupOne encontrado:', response.data.groupOne);
-            const projectData = response.data.groupOne.find(
-                group => group.id === CLOCKIFY_PROJECT_ID
-            );
-            if (projectData) {
-                hours = projectData.duration / (1000 * 60 * 60);
-            }
+        // Sumamos la duración de todas las entradas de tiempo
+        if (response.data.timeentries && response.data.timeentries.length > 0) {
+            totalMilliseconds = response.data.timeentries.reduce((total, entry) => {
+                // Convertimos la duración de cada entrada (que viene en PTxHxMxS format) a millisegundos
+                const duration = entry.timeInterval.duration;
+                const hours = duration.match(/(\d+)H/)?.[1] || 0;
+                const minutes = duration.match(/(\d+)M/)?.[1] || 0;
+                const seconds = duration.match(/(\d+)S/)?.[1] || 0;
+                
+                return total + (hours * 3600000 + minutes * 60000 + seconds * 1000);
+            }, 0);
         }
 
-        console.log('Horas calculadas:', hours);
-        return Number(hours.toFixed(2));
+        // Convertimos millisegundos a horas y redondeamos a 2 decimales
+        const hours = Number((totalMilliseconds / (1000 * 60 * 60)).toFixed(2));
+        
+        console.log('Total horas calculadas:', hours);
+        return hours;
     } catch (error) {
         console.error('Error detallado de Clockify:', {
             message: error.message,
@@ -74,15 +82,12 @@ async function getClockifyHours() {
     }
 }
 
-// Función para actualizar Notion
+// Función para actualizar Notion (sin cambios)
 async function updateNotion(hours) {
     try {
         console.log('Intentando actualizar Notion...');
         console.log('Page ID:', SOLEST_PAGE_ID);
         console.log('Horas a actualizar:', hours);
-
-        const page = await notion.pages.retrieve({ page_id: SOLEST_PAGE_ID });
-        console.log('Página de Notion encontrada:', JSON.stringify(page, null, 2));
 
         const updateResponse = await notion.pages.update({
             page_id: SOLEST_PAGE_ID,
@@ -94,7 +99,7 @@ async function updateNotion(hours) {
             }
         });
 
-        console.log('Respuesta de actualización de Notion:', JSON.stringify(updateResponse, null, 2));
+        console.log('Notion actualizado exitosamente');
         return true;
     } catch (error) {
         console.error('Error detallado de Notion:', {
@@ -106,7 +111,7 @@ async function updateNotion(hours) {
     }
 }
 
-// Handler para la API de Vercel
+// Handler para la API de Vercel (sin cambios)
 module.exports = async (req, res) => {
     try {
         // Permitir CORS
