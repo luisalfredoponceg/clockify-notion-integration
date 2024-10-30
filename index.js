@@ -11,37 +11,6 @@ const WORKSPACE_ID = process.env.WORKSPACE_ID;
 // Inicializar cliente de Notion
 const notion = new Client({ auth: NOTION_TOKEN });
 
-// Función auxiliar para convertir duración a milisegundos
-function parseDuration(duration) {
-    console.log('Procesando duración:', duration);
-    
-    if (typeof duration !== 'string') {
-        console.log('La duración no es un string:', typeof duration, duration);
-        return 0;
-    }
-
-    // Si la duración viene en formato de milisegundos directo
-    if (!isNaN(duration)) {
-        return parseInt(duration);
-    }
-
-    try {
-        // Asumiendo que la duración viene en formato ISO 8601
-        const hours = duration.match(/(\d+)H/)?.[1] || 0;
-        const minutes = duration.match(/(\d+)M/)?.[1] || 0;
-        const seconds = duration.match(/(\d+)S/)?.[1] || 0;
-
-        console.log('Duración desglosada:', { hours, minutes, seconds });
-        
-        return (parseInt(hours) * 3600000) + 
-               (parseInt(minutes) * 60000) + 
-               (parseInt(seconds) * 1000);
-    } catch (error) {
-        console.error('Error al procesar la duración:', error);
-        return 0;
-    }
-}
-
 // Función para obtener las horas de Clockify
 async function getClockifyHours() {
     try {
@@ -78,40 +47,30 @@ async function getClockifyHours() {
             }
         );
 
-        console.log('Estructura de la respuesta:', Object.keys(response.data));
+        console.log('Respuesta de Clockify recibida');
         console.log('Número total de entradas:', response.data.timeentries?.length || 0);
 
-        // Mostrar las primeras entradas para debug
-        if (response.data.timeentries && response.data.timeentries.length > 0) {
-            console.log('Ejemplo de primera entrada:', JSON.stringify(response.data.timeentries[0], null, 2));
-        }
-
-        let totalMilliseconds = 0;
+        let totalSeconds = 0;
 
         if (response.data.timeentries && response.data.timeentries.length > 0) {
             response.data.timeentries.forEach((entry, index) => {
-                console.log(`Procesando entrada ${index + 1}:`, {
+                const duration = entry.timeInterval.duration;
+                console.log(`Entrada ${index + 1}:`, {
                     description: entry.description,
-                    timeInterval: entry.timeInterval
+                    duration: duration,
+                    start: entry.timeInterval.start,
+                    end: entry.timeInterval.end
                 });
 
-                let entryDuration;
-                if (entry.timeInterval && entry.timeInterval.duration) {
-                    entryDuration = parseDuration(entry.timeInterval.duration);
-                } else if (entry.timeInterval) {
-                    // Calcular duración basada en start y end si están disponibles
-                    const start = new Date(entry.timeInterval.start);
-                    const end = new Date(entry.timeInterval.end);
-                    entryDuration = end - start;
-                }
-
-                console.log(`Duración calculada para entrada ${index + 1}:`, entryDuration);
-                totalMilliseconds += entryDuration;
+                // Sumamos los segundos directamente
+                totalSeconds += duration;
             });
         }
 
-        const hours = Number((totalMilliseconds / (1000 * 60 * 60)).toFixed(2));
-        console.log('Total millisegundos:', totalMilliseconds);
+        // Convertimos segundos a horas
+        const hours = Number((totalSeconds / 3600).toFixed(2));
+        
+        console.log('Total segundos:', totalSeconds);
         console.log('Total horas calculadas:', hours);
         
         return hours;
